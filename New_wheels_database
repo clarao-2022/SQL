@@ -1,0 +1,96 @@
+#1: [Q1] What is the distribution of customers across states?
+
+SELECT
+	DISTINCT state,
+	COUNT(customer_id),
+    COUNT(case when gender='Male' then 1 end) as male_cnt,
+	COUNT(case when gender='Female' then 1 end) as female_cnt
+FROM customer_t
+GROUP BY state
+
+#2: [Q2]
+WITH quarter_ranking AS 
+(
+SELECT 
+	quarter_number,
+	customer_feedback,
+    CASE WHEN customer_feedback = 'Very Bad' THEN 1
+    WHEN customer_feedback = 'Bad' THEN 2
+    WHEN customer_feedback = 'Okay' THEN 3
+    WHEN customer_feedback = 'Good' THEN 4
+    WHEN customer_feedback = 'Very Good' THEN 5
+    END AS customer_ratings
+FROM order_t
+ORDER BY quarter_number, customer_ratings
+)
+SELECT 
+	quarter_number,
+    AVG(customer_ratings) as avg_quarter_ranking
+FROM quarter_ranking
+GROUP BY quarter_number
+ORDER BY quarter_number
+
+#3:
+WITH satisfaction_ranking AS
+(
+SELECT 
+    quarter_number,
+    count(customer_feedback) AS total_feedback,
+    COUNT(case when customer_feedback='Very Bad' then 1 end) as very_bad_cnt,
+	COUNT(case when customer_feedback='Bad' then 1 end) as bad_cnt,
+	COUNT(case when customer_feedback='Okay' then 1 end) as okay_cnt,
+	COUNT(case when customer_feedback='Good' then 1 end) as good_cnt,
+	COUNT(case when customer_feedback='Very Good' then 1 end) as very_good_cnt
+FROM order_t
+GROUP BY quarter_number
+ORDER BY quarter_number
+)
+SELECT 
+	quarter_number, 
+	(very_bad_cnt/total_feedback) * 100 AS very_bad,
+    (bad_cnt/total_feedback) * 100 AS bad,
+    (okay_cnt/total_feedback) * 100 AS okay,
+    (good_cnt/total_feedback) * 100 AS good,
+    (very_good_cnt/total_feedback) * 100 AS very_good
+FROM satisfaction_ranking
+
+#4:
+SELECT 
+	DISTINCT COUNT(customer_id) AS total_customers,
+    vehicle_maker
+FROM order_t
+	LEFT JOIN product_t
+    ON order_t.product_id = product_t.product_id
+GROUP BY vehicle_maker
+ORDER BY total_customers DESC
+LIMIT 5
+
+#5:
+WITH CustomerCountPerMaker AS (
+    SELECT 
+        customer_t.customer_id,
+        state,
+        product_t.vehicle_maker,
+        COUNT(customer_t.customer_id) OVER (PARTITION BY state, product_t.vehicle_maker) AS count_customer_per_maker
+    FROM 
+        customer_t
+        INNER JOIN order_t ON customer_t.customer_id = order_t.customer_id
+        INNER JOIN product_t ON order_t.product_id = product_t.product_id
+)
+
+SELECT 
+    customer_id,
+    state,
+    vehicle_maker,
+    count_customer_per_maker,
+    RANK() OVER (PARTITION BY state ORDER BY count_customer_per_maker DESC) AS rank_per_state
+FROM 
+    CustomerCountPerMaker;
+
+#6:
+SELECT 
+	quarter_number,
+    COUNT(order_id)
+FROM order_t
+GROUP BY quarter_number
+ORDER BY 2 DESC
