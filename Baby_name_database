@@ -1,0 +1,153 @@
+## For this project, I use a baby name database from the years 1980-2009 to aggregate data to identify trends
+
+/*
+Find the overall most popular girl and boy names and show how they have changed in popularity rankings over the years
+*/
+
+SELECT
+	DISTINCT(Name),
+    SUM(Births) AS num_babies
+FROM names
+WHERE Gender = 'F'
+GROUP BY 1
+ORDER BY num_babies DESC 
+LIMIT 1;
+-- 'Jessica', '863121'
+
+WITH ranked_girls_names AS(
+SELECT
+	Year,
+    Name,
+    SUM(Births) AS num_babies,
+    ROW_NUMBER() OVER(partition by YEAR ORDER BY SUM(Births) DESC) AS popularity
+FROM names
+WHERE Gender = 'F'
+GROUP BY 1,2)
+SELECT *
+FROM ranked_girls_names
+WHERE Name = 'Jessica';
+
+/*
+Find the names with the biggest jumps in popularity from the first year (1980) of the data set to the last year (2009)
+*/
+
+With ranked_1980 AS(
+SELECT
+	Year,
+    Name,
+    ROW_NUMBER() OVER(partition by YEAR ORDER BY SUM(Births) DESC) AS popularity
+FROM names
+WHERE Year = '1980'
+GROUP BY 1,2),
+
+ranked_2009 AS(
+SELECT
+	Year,
+    Name,
+    ROW_NUMBER() OVER(partition by YEAR ORDER BY SUM(Births) DESC) AS popularity
+FROM names
+WHERE Year = '2009'
+GROUP BY 1,2)
+
+SELECT 
+	*,
+    CAST(ranked_2009.popularity AS SIGNED) - CAST(ranked_1980.popularity AS SIGNED) AS popularity_difference
+FROM ranked_1980
+	INNER JOIN ranked_2009 USING(Name)
+ORDER BY popularity_difference ASC;
+
+/*
+For each year, return the 3 most popular girl names and 3 most popular boy names
+*/
+WITH girls_names AS(
+SELECT
+	Year,
+    ROW_NUMBER() OVER(PARTITION BY Year ORDER BY SUM(Births) DESC) AS popularity,
+    Name
+FROM names
+WHERE Gender = 'F'
+GROUP BY 1,3)
+SELECT *
+FROM girls_names 
+WHERE popularity < 4;
+
+/*
+For each decade, return the 3 most popular girl names and 3 most popular boy names
+*/
+SELECT * FROM (WITH girls_names AS(
+SELECT
+SUM(Births) AS num_babies,
+	CASE WHEN YEAR BETWEEN '1980' AND '1989' THEN 'Eighties'
+		 WHEN YEAR BETWEEN '1990' AND '1999' THEN 'Nineties'
+         WHEN YEAR BETWEEN '2000' AND '2009' THEN 'Two-thousands'
+         ELSE 'NONE' 
+         END AS decades,
+Name
+FROM names
+WHERE Gender = 'F'
+GROUP BY 2,3)
+SELECT
+	decades,
+    Name,
+    ROW_NUMBER() OVER(PARTITION BY decades ORDER BY num_babies DESC) AS popularity
+FROM girls_names) AS ranked_decades
+WHERE popularity < 4;
+
+/*
+Return the number of babies born in each of the six regions (NOTE: The state of MI should be in the Midwest region)
+*/
+WITH cleaned_regions AS(
+SELECT
+	state,
+	CASE WHEN region = 'New England' THEN 'New_England'
+		 ELSE region
+         END AS cleaned_region
+FROM regions
+UNION 
+	SELECT
+		'MI' AS state,
+        'Midwest' AS cleaned_region
+FROM regions)
+SELECT 
+	cr.cleaned_region,
+    SUM(Births) AS num_babies
+FROM names LEFT JOIN cleaned_regions cr USING(state)
+GROUP BY 1;
+
+/*
+Return the 3 most popular girl names and 3 most popular boy names within each region
+*/
+SELECT * FROM(WITH cleaned_regions AS(
+SELECT
+	state,
+	CASE WHEN region = 'New England' THEN 'New_England'
+		 ELSE region
+         END AS cleaned_region
+FROM regions
+UNION 
+	SELECT
+		'MI' AS state,
+        'Midwest' AS cleaned_region
+FROM regions)
+SELECT 
+	cr.cleaned_region,
+    names.name,
+    Gender,
+    SUM(names.births) AS num_babies,
+    ROW_NUMBER() OVER(PARTITION BY cr.cleaned_region order by SUM(names.births) DESC) AS popularity
+FROM cleaned_regions cr
+LEFT JOIN names USING(state)
+WHERE Gender = 'F'
+GROUP BY 1,2,3) AS ranked_regions
+WHERE popularity < 4;
+
+/*
+Find the 10 most popular androgynous names (names given to both females and males)
+*/
+SELECT Name,
+	   COUNT(DISTINCT Gender) as num_genders,
+       ROW_NUMBER() OVER(ORDER BY SUM(Births) DESC) AS popularity
+FROM names
+GROUP BY Name
+HAVING num_genders = 2
+LIMIT 10
